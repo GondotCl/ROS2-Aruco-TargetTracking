@@ -18,8 +18,10 @@ import tf2_ros
 from std_msgs.msg import Header, Bool
 from geometry_msgs.msg import TransformStamped
 from sensor_msgs.msg import Image
+from custom_interfaces.msg import PointsList
 
 from ament_index_python.packages import get_package_share_directory
+
 
 # Class definition fo the estimator
 class ArucoPoseNode(Node):
@@ -35,10 +37,12 @@ class ArucoPoseNode(Node):
         self.declare_parameter("publishers.marker_image", "/target_tracking/marker_image")
         self.marker_image_topic = self.get_parameter("publishers.marker_image").value
 
-        self.declare_parameter("publishers.marker_transform_prefix", "/target_tracking/camera_to_marker_transform/marker_")
+        self.declare_parameter("publishers.marker_transform_prefix",
+                               "/target_tracking/camera_to_marker_transform/marker_")
         self.marker_pose_topic = self.get_parameter("publishers.marker_transform_prefix").value
 
-        self.declare_parameter("publishers.marker_presence_prefix", "/target_tracking/camera_to_marker_presence/marker_")
+        self.declare_parameter("publishers.marker_presence_prefix",
+                               "/target_tracking/camera_to_marker_presence/marker_")
         self.marker_presence_topic = self.get_parameter("publishers.marker_presence_prefix").value
 
         self.declare_parameter("pose_topic_hz", "30")
@@ -57,11 +61,11 @@ class ArucoPoseNode(Node):
             self.declare_parameter("custom_marker_side_dict.number_of_entries", "0")
             self.custom_dict_n_ = int(self.get_parameter("custom_marker_side_dict.number_of_entries").value)
 
-            for i in range (0, self.custom_dict_n_):
+            for i in range(0, self.custom_dict_n_):
                 entry_name = "custom_marker_side_dict.entry_" + str(i)
                 self.declare_parameter(entry_name + ".id", "0")
                 m_id = int(self.get_parameter(entry_name + ".id").value)
-                
+
                 self.declare_parameter(entry_name + ".marker_side", "0.0")
                 m_side = float(self.get_parameter(entry_name + ".marker_side").value)
                 self.custom_marker_sides[m_id] = m_side
@@ -74,10 +78,10 @@ class ArucoPoseNode(Node):
 
         self.declare_parameter("frames.camera_link", "camera_link")
         self.camera_link_frame = self.get_parameter("frames.camera_link").value
-        
+
         self.declare_parameter("frames.marker_link_prefix", "marker_link_")
         self.marker_link_frame_prefix_ = self.get_parameter("frames.marker_link_prefix").value
-        
+
         self.declare_parameter("aruco.dict", "5X5_100")
         self.aruco_dict_name_ = self.get_parameter("aruco.dict").value
 
@@ -90,10 +94,10 @@ class ArucoPoseNode(Node):
         else:
             self.calibration_camera_path = package_share_directory + "/calibration/calib_params_" + self.camera_optic_length + ".json"
 
-
         # Class attributes
         self.cam_params = dict()
-        self.get_logger().info("[Aruco Pose Estimator] Uploading intrinsic parameters from " + self.calibration_camera_path)
+        self.get_logger().info(
+            "[Aruco Pose Estimator] Uploading intrinsic parameters from " + self.calibration_camera_path)
         self.get_cam_parameters()
         self.frame = []
         self.marker_pose = []
@@ -130,40 +134,39 @@ class ArucoPoseNode(Node):
 
         if self.search_for_grid:
 
-            for i in range (0, self.grid_number):
-
+            for i in range(0, self.grid_number):
                 entry_name = "grid.grid_" + str(i) + "."
                 self.declare_parameter(entry_name + "output_id", "10")
                 grid_output_id = int(self.get_parameter(entry_name + "output_id").value)
                 self.grid_output_ids.append(grid_output_id)
-                
+
                 self.declare_parameter(entry_name + "marker_length", "0.07")
                 grid_marker_length = float(self.get_parameter(entry_name + "marker_length").value)
                 self.grid_marker_lengths.append(grid_marker_length)
-                
+
                 self.declare_parameter(entry_name + "marker_separation", "0.04")
                 grid_marker_separation = float(self.get_parameter(entry_name + "marker_separation").value)
                 self.grid_marker_separations.append(grid_marker_separation)
-                
+
                 self.declare_parameter(entry_name + "rows", "3")
                 grid_rows = int(self.get_parameter(entry_name + "rows").value)
                 self.grid_rows.append(grid_rows)
-                
+
                 self.declare_parameter(entry_name + "cols", "3")
                 grid_cols = int(self.get_parameter(entry_name + "cols").value)
                 self.grid_cols.append(grid_cols)
-                
+
                 self.declare_parameter(entry_name + "grid_ids", [0, 1, 2, 3, 4, 5, 6, 7, 8, 9])
                 grid_ids = self.get_parameter(entry_name + "grid_ids").value
-                
+
                 self.grid_ids.append(grid_ids)
                 self.grid_overall_ids.update(grid_ids)
 
                 board = aruco.GridBoard_create(
-                    markersX=self.grid_rows[i], 
-                    markersY=self.grid_cols[i], 
-                    markerLength=self.grid_marker_lengths[i], 
-                    markerSeparation=self.grid_marker_separations[i], 
+                    markersX=self.grid_rows[i],
+                    markersY=self.grid_cols[i],
+                    markerLength=self.grid_marker_lengths[i],
+                    markerSeparation=self.grid_marker_separations[i],
                     dictionary=self.aruco_dict,
                     firstMarker=grid_ids[0]
                 )
@@ -180,18 +183,23 @@ class ArucoPoseNode(Node):
         self.presence_pub = dict()
 
         self.marker_ids_seen = set()
-        
+
+        ########################################################################
+        ############ Adding a publisher for the corner of the marker ###########
+        ########################################################################
+        self.declare_parameter("corners_topic", "/target_tracking/marker_corners")
+        self.corners_topic = self.get_parameter("corners_topic").value
+        self.corners_pub = self.create_publisher(PointsList, self.corners_topic, 1)
+
         self.br = tf2_ros.TransformBroadcaster(self)
         self.get_logger().info("[Aruco Pose Estimator] Node Ready")
-
 
     def callback_call_stop_service(self, future, stop_flag):
         try:
             response = future.result()
             self.get_logger().info("[Aruco Pose Estimator] Camera state has been set: " + str(response.cam_state))
         except Exception as e:
-            self.get_logger().info("Service call failed %r" %(e,))
-
+            self.get_logger().info("Service call failed %r" % (e,))
 
     def get_cam_parameters(self):
         with open(self.calibration_camera_path, "r") as readfile:
@@ -199,7 +207,6 @@ class ArucoPoseNode(Node):
 
         self.cam_params["mtx"] = np.array(self.cam_params["mtx"], dtype=float).reshape(3, 3)
         self.cam_params["dist"] = np.array(self.cam_params["dist"], dtype=float)
-
 
     def callback_frame(self, msg):
         frame = self.bridge.imgmsg_to_cv2(msg)
@@ -210,19 +217,29 @@ class ArucoPoseNode(Node):
 
         self.estimate_pose()
 
-
     def estimate_pose(self):
-        corners, ids, rejected = aruco.detectMarkers(self.frame, self.aruco_dict, parameters = self.aruco_params)
+        corners, ids, rejected = aruco.detectMarkers(self.frame, self.aruco_dict, parameters=self.aruco_params)
 
         # self.get_logger().warn("ids: {0}".format(ids))
         self.currently_seen_ids = set()
-        if ids is not None and len(ids) > 0: 
+        if ids is not None and len(ids) > 0:
 
             if self.publish_image_feedback:
                 self.aruco_display(corners, ids)
-            
+                msg = PointsList()
+
+                msg.upper_left.x = float(corners[0][0][0][0])
+                msg.upper_left.y = float(corners[0][0][0][1])
+                msg.upper_right.x = float(corners[0][0][1][0])
+                msg.upper_right.y = float(corners[0][0][1][1])
+                msg.lower_right.x = float(corners[0][0][2][0])
+                msg.lower_right.y = float(corners[0][0][2][1])
+                msg.lower_left.x = float(corners[0][0][3][0])
+                msg.lower_left.y =float(corners[0][0][3][1])
+                self.corners_pub.publish(msg)
+
             for (marker_corner, marker_id) in zip(corners, ids):
-                
+
                 self.currently_seen_ids.add(int(marker_id[0]))
 
                 marker_side = self.marker_side
@@ -231,35 +248,33 @@ class ArucoPoseNode(Node):
                     marker_side = self.custom_marker_sides[marker_id[0]]
 
                 # Pose estimation for each marker
-                rvec, tvec, _ = aruco.estimatePoseSingleMarkers(marker_corner, marker_side, 
-                    self.cam_params["mtx"], self.cam_params["dist"])
+                rvec, tvec, _ = aruco.estimatePoseSingleMarkers(marker_corner, marker_side,
+                                                                self.cam_params["mtx"], self.cam_params["dist"])
 
                 if not self.search_for_grid or marker_id[0] not in self.grid_overall_ids:
                     self.publish_pose(marker_id[0], tvec[0][0], rvec[0][0])
-                    
-            
+
             if self.search_for_grid:
 
-                for i in range (0, self.grid_number):
-                    retval, rvec2, tvec2 = aruco.estimatePoseBoard(corners, ids, self.boards[i], self.cam_params["mtx"], self.cam_params["dist"], rvec, tvec)
+                for i in range(0, self.grid_number):
+                    retval, rvec2, tvec2 = aruco.estimatePoseBoard(corners, ids, self.boards[i], self.cam_params["mtx"],
+                                                                   self.cam_params["dist"], rvec, tvec)
 
                     self.get_logger().info("[Aruco Pose Estimator] retval: {0}".format(retval))
                     if retval > 5:
                         self.currently_seen_ids.add(self.grid_output_ids[i])
-                        
+
                         if tvec2.shape[0] == 3:
                             tvec2_ = [tvec2[0][0], tvec2[1][0], tvec2[2][0]]
                             rvec2_ = [rvec2[0][0], rvec2[1][0], rvec2[2][0]]
                             self.publish_pose(self.grid_output_ids[i], tvec2_, rvec2_)
                         else:
                             self.publish_pose(self.grid_output_ids[i], tvec2[0][0], rvec2[0][0])
-        
 
         for marker_not_seen in self.marker_ids_seen.difference(self.currently_seen_ids):
             presence_msg = Bool()
             presence_msg.data = False
             self.presence_pub[marker_not_seen].publish(presence_msg)
-
 
     def publish_pose(self, marker_id, tvec, rvec):
 
@@ -270,9 +285,9 @@ class ArucoPoseNode(Node):
 
             marker_presence_topic = self.marker_presence_topic + str(marker_id)
             self.presence_pub[marker_id] = self.create_publisher(Bool, marker_presence_topic, 1)
-        
+
         msg = TransformStamped()
-        
+
         msg.header.stamp = self.get_clock().now().to_msg()
         msg.header.frame_id = self.camera_link_frame
 
@@ -298,9 +313,8 @@ class ArucoPoseNode(Node):
         presence_msg = Bool()
         presence_msg.data = True
         self.presence_pub[marker_id].publish(presence_msg)
-        
+
         self.br.sendTransform(msg)
-        
 
     def aruco_display(self, corners, ids):
         if len(corners) > 0:
@@ -310,11 +324,10 @@ class ArucoPoseNode(Node):
             self.frame_color = cv2.cvtColor(self.frame, cv2.COLOR_GRAY2BGR)
             # loop over the detected ArUCo corners
             for (markerCorner, markerID) in zip(corners, ids):
-
-                rvec, tvec, _ = aruco.estimatePoseSingleMarkers(markerCorner, self.marker_side, 
-                    self.cam_params["mtx"], self.cam_params["dist"])
+                rvec, tvec, _ = aruco.estimatePoseSingleMarkers(markerCorner, self.marker_side,
+                                                                self.cam_params["mtx"], self.cam_params["dist"])
                 # Draw the axis on the aruco markers
-                aruco.drawAxis(self.frame_color, self.cam_params["mtx"], self.cam_params["dist"], rvec, tvec, 0.1)
+                cv2.drawFrameAxes(self.frame_color, self.cam_params["mtx"], self.cam_params["dist"], rvec, tvec, 0.1)
 
                 # extract the marker corners (which are always returned in
                 # top-left, top-right, bottom-right, and bottom-left order)
@@ -336,8 +349,8 @@ class ArucoPoseNode(Node):
                 cY = int((topLeft[1] + bottomRight[1]) / 2.0)
                 cv2.circle(self.frame_color, (cX, cY), 4, (0, 0, 255), -1)
                 # draw the ArUco marker ID on the image
-                cv2.putText(self.frame_color, str(markerID),(topLeft[0], topLeft[1] - 10), cv2.FONT_HERSHEY_SIMPLEX,
-                    0.5, (0, 255, 0), 2)
+                cv2.putText(self.frame_color, str(markerID), (topLeft[0], topLeft[1] - 10), cv2.FONT_HERSHEY_SIMPLEX,
+                            0.5, (0, 255, 0), 2)
 
             self.image_message = self.bridge.cv2_to_imgmsg(self.frame_color, encoding="bgr8")
             self.image_message.header = Header()
@@ -349,7 +362,7 @@ class ArucoPoseNode(Node):
 def main(args=None):
     rclpy.init(args=args)
     node = ArucoPoseNode()
-    
+
     try:
         rclpy.spin(node)
     except KeyboardInterrupt:
@@ -358,7 +371,7 @@ def main(args=None):
         node.get_logger().info('[Aruco Pose Estimator] Exception:', file=sys.stderr)
         raise
     finally:
-        rclpy.shutdown() 
+        rclpy.shutdown()
 
 
 if __name__ == "__main__":

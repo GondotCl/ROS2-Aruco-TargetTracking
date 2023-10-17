@@ -1,0 +1,39 @@
+aruco_detector:
+  ros__parameters:
+    camera_module: camera_calibration  # for calibration file
+    publish_image_feedback: True
+
+    custom_marker_side_dict:
+      enable: False
+
+    ### not changed
+    # pose_topic_hz: 30
+    # marker_side: 0.1
+    #
+    # publisher:
+    #   marker_image: /target_tracking/marker_image
+    #   marker_transform_prefix: /target_tracking/camera_to_marker_transform/marker_
+    #   marker_presence_prefix: /target_tracking/camera_to_marker_presence/marker_
+    #   corners_topic: /target_tracking/marker_corners
+    #
+    #
+    # camera_optic_length: auto
+    # grid:
+    #   detect_grid: False
+    #   number_of_grids: 0
+    ### end
+
+    subscribers:
+      raw_frame: /zedm/zed_node/left_raw/image_raw_color
+
+    ### does not exist with zed camera
+    # client_services:
+    #  stop_camera:
+    ###
+
+    frames:
+      camera_link: camera_link  # can be changed with zedm_left_camera_frame or zedm_base_link
+      marker_link_prefix: marker_link_
+
+    aruco:
+      dict: 5X5_250
